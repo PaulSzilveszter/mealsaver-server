@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
 
-import { expireTime, CORS } from "./constants";
+import { expireTime, CORS, PORT } from "./constants";
 
 dotenv.config()
 
@@ -279,4 +279,4 @@ SERVER.get("/products/posts", (req: Request, res: Response) => {
 });
 
 
-SERVER.listen(3000);
+SERVER.listen(PORT);
