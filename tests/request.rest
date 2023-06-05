@@ -1,79 +1,122 @@
-###
+@baseUrl = http://localhost:3000
+@username = testuser
+@password = testpassword
+@postId = 
+@userId = 32f5760b-2f4b-49c9-90a2-0c9aa008ada2
+
+### getUsers
 # @name getUsers
-GET http://localhost:3000/users HTTP/1.1
+GET {{baseUrl}}/users HTTP/1.1
 
-###
+{{userId}} = {{getUsers.response.body.[0].id}}
 
+
+### register
 # @name register
-POST http://localhost:3000/users/register HTTP/1.1
+POST {{baseUrl}}/users/register HTTP/1.1
 Content-Type: application/json
 
 {
-  "username": "testuser",
-  "email": "testuser@email.com",
-  "password": "testpassword"
+  "username": "{{username}}",
+  "email": "testuser@example.com",
+  "password": "{{password}}"
 }
 
-###
-
+### login
 # @name login
-POST http://localhost:3000/users/login HTTP/1.1
+POST {{baseUrl}}/users/login HTTP/1.1
 Content-Type: application/json
 
 {
-  "username": "testuser",
-  "password": "testpassword"
+  "username": "{{username}}",
+  "password": "{{password}}"
 }
 
-###
-
+### refreshToken
 # @name refreshToken
-POST http://localhost:3000/token HTTP/1.1
+POST {{baseUrl}}/token HTTP/1.1
 Content-Type: application/json
 
 {
   "token": "{{login.response.body.refreshToken}}"
 }
 
-###
-
+### logout
 # @name logout
-DELETE http://localhost:3000/logout HTTP/1.1
+DELETE {{baseUrl}}/logout HTTP/1.1
 Content-Type: application/json
 
 {
   "token": "{{login.response.body.refreshToken}}"
 }
 
-###
-
+### updateUser
 # @name updateUser
-PUT http://localhost:3000/users/me HTTP/1.1
+PUT {{baseUrl}}/users/me HTTP/1.1
 Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
-  "email": "testuser232@email.com"
+  "username": "newusername",
+  "email": "newemail@example.com",
+  "password": "newpassword"
 }
 
-###
-
+### addProduct
 # @name addProduct
-POST http://localhost:3000/products/add HTTP/1.1
+POST {{baseUrl}}/products/add HTTP/1.1
 Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
-  "post":{
-    "seller":"paul",
-    "units":3,
-    "pricePerUnit":4,
-    "product":"chicken",
-    "location":"Binsj"
+  "post": {
+    "seller": "paul",
+    "units": 3,
+    "pricePerUnit": 4,
+    "product": "chicken",
+    "location": "Binsj"
   }
 }
 
-### 
-
+### getPosts
 # @name getPosts
-GET http://localhost:3000/products/posts HTTP/1.1
+GET {{baseUrl}}/products/posts HTTP/1.1
+
+### editProduct
+# @name editProduct
+PUT {{baseUrl}}/products/edit/{{postId}} HTTP/1.1
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "post": {
+    "seller": "paul",
+    "units": 5,
+    "pricePerUnit": 6,
+    "product": "beef",
+    "location": "New York"
+  }
+}
+
+### removeProduct
+# @name removeProduct
+DELETE {{baseUrl}}/products/remove/{{postId}} HTTP/1.1
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### getUserPosts
+# @name getUserPosts
+GET {{baseUrl}}/users/{{userId}}/posts HTTP/1.1
+
+### getUserTransactions
+# @name getUserTransactions
+GET {{baseUrl}}/users/{{userId}}/transactions HTTP/1.1
+
+### addTransaction
+# @name addTransaction
+POST {{baseUrl}}/transactions/add HTTP/1.1
+Authorization: Bearer {{login.response.body.accessToken}}
+Content-Type: application/json
+
+{
+  "postId": "{{postId}}"
+}

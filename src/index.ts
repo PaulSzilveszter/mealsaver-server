@@ -7,6 +7,7 @@ import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
 
 import { expireTime, CORS, PORT } from "./constants";
+import { generateRandomHexString } from "./crypto";
 
 dotenv.config()
 
@@ -44,13 +45,33 @@ export interface Post {
   location: string;
 }
 
+export interface Transaction {
+  seller: string;
+  buyer: string;
+  postId: string;
+  verificationCode: string;
+  post: Post; // Added post property
+}
+
+
+
+
 export const usersById: Map<string, UserData> = new Map();
 export const usersByEmail: Map<string, string> = new Map();
 export const usersByUsername: Map<string, string> = new Map();
 export let refreshTokens: Array<string> = [];
+
+
+
 export const posts: Map<string, Post> = new Map<string, Post>();
 
 const postsByUser: Map<string, Array<string>> = new Map<string, Array<string>>();
+
+
+
+export const transactions: Map<string, Transaction> = new Map<string, Transaction>();
+export const transactionsByUser = new Map<string, Transaction[]>();
+
 
 export function registerUser(user: UserData) {
   usersById.set(user.id, user);
@@ -82,11 +103,83 @@ function addPost(post: Post, user: UserData) {
   }
 }
 
+function removePost(postId: string) {
+  if (posts.has(postId)) {
+    posts.delete(postId);
+    for (const [userId, userPosts] of postsByUser) {
+      const updatedUserPosts = userPosts.filter((postIdParam) => postIdParam !== postId);
+      postsByUser.set(userId, updatedUserPosts);
+    }
+    return true;
+  }
+  return false;
+}
+
+function editPost(postId: string, updatedPost: Post) {
+  if (posts.has(postId)) {
+    posts.set(postId, updatedPost);
+    return true;
+  }
+  return false;
+}
+
+
+
 function getPostsAsArrayWithId() {
   const postsArray = Array.from(posts.entries());
   const postsData = postsArray.map(([id, post]) => ({ postId: id, ...post }));
   return postsData;
 }
+
+function addTransaction(postId: string, buyer: string): boolean {
+  const post = posts.get(postId);
+
+  if (post) {
+    const postRemoved = removePost(postId);
+
+    if (postRemoved) {
+      const verificationCode = generateRandomHexString(64);
+
+      const transaction: Transaction = {
+        seller: post.seller,
+        buyer,
+        postId,
+        verificationCode,
+        post,
+      };
+
+      // Update transactions map
+      transactions.set(postId, transaction);
+
+      // Update transactionsByUser map for buyer
+      const userTransactions = transactionsByUser.get(buyer) || [];
+      userTransactions.push(transaction);
+      transactionsByUser.set(buyer, userTransactions);
+
+      // Update transactionsByUser map for seller
+      const sellerTransactions = transactionsByUser.get(post.seller) || [];
+      sellerTransactions.push(transaction);
+      transactionsByUser.set(post.seller, sellerTransactions);
+
+      return true;
+    }
+  }
+
+  return false;
+}
+
+
+
+function getVerificationCode(postId: string, participantId: string): string | undefined {
+  const transaction = transactions.get(postId);
+
+  if (transaction && (transaction.buyer === participantId || transaction.seller === participantId)) {
+    return transaction.verificationCode;
+  }
+
+  return undefined;
+}
+
 
 
 
@@ -273,10 +366,143 @@ SERVER.post("/products/add", authenticateToken, async (req: Request, res: Respon
   }
 });
 
+SERVER.put("/products/edit/:postId", authenticateToken, (req: Request, res: Response) => {
+  const { postId } = req.params;
+  const { id: userId } = req.body.user;
+  const updatedPost = req.body.post;
+
+  if (!postId) {
+    return res.status(400).send("Missing post ID");
+  }
+
+  if (!updatedPost) {
+    return res.status(400).send("Missing updated post data");
+  }
+
+  const post = posts.get(postId);
+
+  if (post) {
+    if (post.seller === userId) {
+      const success = editPost(postId, updatedPost);
+      if (success) {
+        res.status(200).json([...posts.values()]);
+      } else {
+        res.status(404).send("Post not found");
+      }
+    } else {
+      res.status(403).send("Forbidden");
+    }
+  } else {
+    res.status(404).send("Post not found");
+  }
+});
+
+SERVER.delete("/products/remove/:postId", authenticateToken, (req: Request, res: Response) => {
+  const { postId } = req.params;
+
+  if (!postId) {
+    return res.status(400).send("Missing post ID");
+  }
+
+  const userId = req.body.user?.id;
+
+  if (!userId) {
+    return res.status(401).send("Unauthorized");
+  }
+
+  const post = posts.get(postId);
+
+  if (post) {
+    if (post.seller === userId) {
+      const success = removePost(postId);
+      if (success) {
+        res.sendStatus(204);
+      } else {
+        res.status(404).send("Post not found");
+      }
+    } else {
+      res.status(403).send("Forbidden");
+    }
+  } else {
+    res.status(404).send("Post not found");
+  }
+});
+
+
 SERVER.get("/products/posts", (req: Request, res: Response) => {
   const postsData = getPostsAsArrayWithId();
   res.status(200).json(postsData);
 });
 
+SERVER.get("/users/:userId/posts", (req: Request, res: Response) => {
+  const { userId } = req.params;
 
+  if (!userId) {
+    return res.status(400).send("Missing user ID");
+  }
+
+  const userPosts = postsByUser.get(userId);
+
+  if (userPosts) {
+    const userPostData = userPosts.map((postId) => {
+      const post = posts.get(postId);
+      return post ? { postId, ...post } : null;
+    });
+
+    const filteredUserPosts = userPostData.filter((post) => post !== null);
+
+    res.status(200).json(filteredUserPosts);
+  } else {
+    res.status(404).send("User not found or has no posts");
+  }
+});
+
+SERVER.get("/users/:userId/transactions", (req: Request, res: Response) => {
+  const { userId } = req.params;
+
+  if (!userId) {
+    return res.status(400).send("Missing user ID");
+  }
+
+  const userTransactions = transactionsByUser.get(userId);
+
+  if (userTransactions) {
+    res.status(200).json(userTransactions);
+  } else {
+    res.status(404).send("User not found or has no transactions");
+  }
+});
+
+
+SERVER.post("/transactions/add", authenticateToken, (req: Request, res: Response) => {
+  const { postId } = req.body;
+  const { id: buyer } = req.body.user;
+
+  if (!postId || !buyer) {
+    return res.status(400).send("Missing post ID or buyer ID");
+  }
+
+  const post = posts.get(postId);
+
+  if (!post) {
+    return res.status(404).send("Post not found");
+  }
+
+  const transactionAdded = addTransaction(postId, buyer);
+
+  if (transactionAdded) {
+    return res.status(201).send("Transaction added successfully");
+  } else {
+    return res.status(500).send("Failed to add transaction");
+  }
+});
+
+
+
+
+
+
+
+
+console.log(PORT)
 SERVER.listen(PORT);
